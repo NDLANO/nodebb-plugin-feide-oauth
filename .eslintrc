@@ -1,3 +1,4 @@
 {
-	"extends": "nodebb"
+  extends: "eslint-config-ndla",
+  overrides: [],
 }

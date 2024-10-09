@@ -1,5 +1,3 @@
-"use strict";
-
 /*
 		Welcome to the SSO OAuth plugin! If you're inspecting this code, you're probably looking to
 		hook up NodeBB with your existing OAuth endpoint.
@@ -207,7 +205,7 @@ OAuth.parseUserReturn = function (data, callback) {
   // Everything else is optional.
 
   // Find out what is available by uncommenting this line:
-  console.log(data);
+  winston.verbose(data);
 
   const profile = {};
   profile.id = data.sub;
@@ -257,7 +255,7 @@ OAuth.login = async (payload) => {
 
     // Automatically confirm user email
     await User.setUserField(uid, "email", email);
-    await UserEmail.confirmByUid(uid);
+    await User.email.confirmByUid(uid);
   }
 
   // Save provider-specific information to the user
