@@ -1,11 +1,11 @@
 {
-  "name": "nodebb-plugin-sso-oauth",
-  "version": "0.5.0",
-  "description": "NodeBB Generic OAuth SSO",
+  "name": "nodebb-plugin-feide-oauth",
+  "version": "0.0.1",
+  "description": "NodeBB Feide OAuth SSO",
   "main": "library.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/julianlam/nodebb-plugin-sso-oauth"
+    "url": "https://github.com/NDLANO/nodebb-plugin-feide-oauth"
   },
   "keywords": [
     "nodebb",
@@ -17,13 +17,9 @@
     "login",
     "registration"
   ],
-  "author": {
-    "name": "Julian Lam",
-    "email": "julian@nodebb.org"
-  },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/julianlam/nodebb-plugin-sso-oauth/issues"
+    "url": "https://github.com/NDLANO/nodebb-plugin-feide-oauth/issues"
   },
   "readme": "",
   "readmeFilename": "README.md",
@@ -35,6 +31,13 @@
     "compatibility": "^1.0.1",
     "index": false
   },
+  "scripts": {
+    "lint": "yarn format-check && yarn lint-es",
+    "lint-es": "eslint --cache --cache-location '.eslintcache/' --ext .js,.jsx,.ts,.tsx --max-warnings=0 static library.js",
+    "format": "prettier '**/*(*.js|*.jsx|*.ts|*.tsx|*.graphql)' --write",
+    "format-check": "prettier '**/*(*.js|*.jsx|*.ts|*.tsx|*.graphql)' --check",
+    "check-all": "yarn format-check && yarn lint-es"
+  },
   "devDependencies": {
     "@commitlint/config-angular": "15.0.0",
     "eslint": "^9.0.0",
@@ -42,7 +45,9 @@
     "eslint-config-nodebb": "^0.2.1",
     "eslint-plugin-import": "^2.27.5",
     "husky": "9.1.6",
-    "lint-staged": "15.2.10"
+    "lint-staged": "15.2.10",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.2"
   },
   "husky": {
     "hooks": {
