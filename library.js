@@ -21,7 +21,6 @@ const authenticationController = require.main.require(
 );
 
 const async = require("async");
-
 const passport = require.main.require("passport");
 const nconf = require.main.require("nconf");
 const winston = require.main.require("winston");
