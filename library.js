@@ -1,301 +1,329 @@
-/*
-		Welcome to the SSO OAuth plugin! If you're inspecting this code, you're probably looking to
-		hook up NodeBB with your existing OAuth endpoint.
+(function (module) {
+  "use strict";
 
-		Step 1: Fill in the "constants" section below with the requisite informaton. Either the "oauth"
-				or "oauth2" section needs to be filled, depending on what you set "type" to.
+  const User = require.main.require('./src/user');
+  const db = require.main.require('./src/database');
+  const meta = require.main.require('./src/meta');
+  const nconf = require.main.require('nconf');
+  const async = require.main.require('async');
+  const passport = require.main.require('passport');
+  const OpenIDConnectStrategy = require('passport-openidconnect');
+  const utils = require('passport-openidconnect/lib/utils');
+  const winston = require.main.require('winston');
+  const authenticationController = require.main.require('./src/controllers/authentication');
 
-		Step 2: Give it a whirl. If you see the congrats message, you're doing well so far!
+  const gatewayHost = process.env.API_GATEWAY_HOST
+    ? `http://${process.env.API_GATEWAY_HOST}`
+    : `https://api.test.ndla.no`;
 
-		Step 3: Customise the `parseUserReturn` method to normalise your user route's data return into
-				a format accepted by NodeBB. Instructions are provided there. (Line 146)
+  const constants = Object.freeze({
+    'name': "Feide",
+    'admin': {
+      'icon': 'fa-users',
+      'route': '/plugins/sso-feide'
+    },
+    gatewayHost,
+    myndlaApiUrl: `${gatewayHost}/myndla-api/v1/users/`,
+    validRoles: ['employee']
+  });
 
-		Step 4: If all goes well, you'll be able to login/register via your OAuth endpoint credentials.
-	*/
+  const sanitizeUsername = (username) => {
+    return username
+      .trim()
+      .replace(/[^'"\s\-.*0-9\u00BF-\u1FFF\u2C00-\uD7FF\w]+/, '-');
+  }
 
-const User = require.main.require("./src/user");
-const Groups = require.main.require("./src/groups");
-const db = require.main.require("./src/database");
-const authenticationController = require.main.require(
-  "./src/controllers/authentication",
-);
+  const Feide = {};
 
-const async = require("async");
-const passport = require.main.require("passport");
-const nconf = require.main.require("nconf");
-const winston = require.main.require("winston");
-
-/**
- * REMEMBER
- *   Never save your OAuth Key/Secret or OAuth2 ID/Secret pair in code! It could be published and leaked accidentally.
- *   Save it into your config.json file instead:
- *
- *   {
- *     ...
- *     "oauth": {
- *       "id": "someoauthid",
- *       "secret": "youroauthsecret"
- *     }
- *     ...
- *   }
- *
- *   ... or use environment variables instead:
- *
- *   `OAUTH__ID=someoauthid OAUTH__SECRET=youroauthsecret node app.js`
- */
-
-const constants = Object.freeze({
-  type: "oauth2", // Either 'oauth' or 'oauth2'
-  name: "feide", // Something unique to your OAuth provider in lowercase, like "github", or "nodebb"
-  oauth: {
-    requestTokenURL: "",
-    accessTokenURL: "",
-    userAuthorizationURL: "",
-    consumerKey: nconf.get("oauth:key"), // don't change this line
-    consumerSecret: nconf.get("oauth:secret"), // don't change this line
-  },
-  oauth2: {
-    authorizationURL: "https://auth.dataporten.no/oauth/authorization",
-    tokenURL: "https://auth.dataporten.no/oauth/token",
-    clientID: nconf.get("oauth:id"), // don't change this line
-    clientSecret: nconf.get("oauth:secret"), // don't change this line
-  },
-  userRoute: "https://auth.dataporten.no/openid/userinfo", // This is the address to your app's "user profile" API endpoint (expects JSON)
-});
-
-const OAuth = {};
-let configOk = false;
-let passportOAuth;
-let opts;
-
-if (!constants.name) {
-  winston.error(
-    "[sso-oauth] Please specify a name for your OAuth provider (library.js:32)",
-  );
-} else if (
-  !constants.type ||
-  (constants.type !== "oauth" && constants.type !== "oauth2")
-) {
-  winston.error(
-    "[sso-oauth] Please specify an OAuth strategy to utilise (library.js:31)",
-  );
-} else if (!constants.userRoute) {
-  winston.error("[sso-oauth] User Route required (library.js:31)");
-} else {
-  configOk = true;
-}
-
-OAuth.getStrategy = function (strategies, callback) {
-  if (configOk) {
-    passportOAuth =
-      require("passport-oauth")[
-        constants.type === "oauth" ? "OAuthStrategy" : "OAuth2Strategy"
-      ];
-
-    if (constants.type === "oauth") {
-      // OAuth options
-      opts = constants.oauth;
-      opts.callbackURL = `${nconf.get("url")}/auth/${constants.name}/callback`;
-
-      passportOAuth.Strategy.prototype.userProfile = function (
-        token,
-        secret,
-        params,
-        done,
-      ) {
-        // If your OAuth provider requires the access token to be sent in the query  parameters
-        // instead of the request headers, comment out the next line:
-        this._oauth._useAuthorizationHeaderForGET = true;
-
-        this._oauth.get(
-          constants.userRoute,
-          token,
-          secret,
-          (err, body /* , res */) => {
-            if (err) {
-              return done(err);
-            }
-
-            try {
-              const json = JSON.parse(body);
-              OAuth.parseUserReturn(json, (err, profile) => {
-                if (err) return done(err);
-                profile.provider = constants.name;
-
-                done(null, profile);
-              });
-            } catch (e) {
-              done(e);
-            }
-          },
-        );
-      };
-    } else if (constants.type === "oauth2") {
-      // OAuth 2 options
-      opts = constants.oauth2;
-      opts.callbackURL = `${nconf.get("url")}/auth/${constants.name}/callback`;
-
-      passportOAuth.Strategy.prototype.userProfile = function (
-        accessToken,
-        done,
-      ) {
-        // If your OAuth provider requires the access token to be sent in the query  parameters
-        // instead of the request headers, comment out the next line:
-        this._oauth2._useAuthorizationHeaderForGET = true;
-
-        this._oauth2.get(
-          constants.userRoute,
-          accessToken,
-          (err, body /* , res */) => {
-            if (err) {
-              return done(err);
-            }
-
-            try {
-              const json = JSON.parse(body);
-              OAuth.parseUserReturn(json, (err, profile) => {
-                if (err) return done(err);
-                profile.provider = constants.name;
-
-                done(null, profile);
-              });
-            } catch (e) {
-              done(e);
-            }
-          },
-        );
-      };
+  const fetchUserInfo = async (token) => {
+    try {
+      const response = await fetch(constants.myndlaApiUrl, {
+        headers: {
+          "FeideAuthorization": `Bearer ${token}`
+        },
+      });
+      if (response.ok) {
+        return await response.json();
+      }
+      const responseBody = await response.json();
+      winston.error(`[feide-sso] Got error when fetching user info. Got code ${response.code} with body: ${JSON.stringify(responseBody)}`);
+      return null;
+    } catch (error) {
+      throw Error('[feide-sso] An error occurred while fetching userInfo', error);
     }
-
-    opts.passReqToCallback = true;
-
-    passport.use(
-      constants.name,
-      new passportOAuth(opts, async (req, token, secret, profile, done) => {
-        const user = await OAuth.login({
-          oAuthid: profile.id,
-          handle: profile.displayName,
-          email: profile.emails[0].value,
-          isAdmin: profile.isAdmin,
-        });
-
-        authenticationController.onSuccessfulLogin(req, user.uid);
-        done(null, user);
-      }),
-    );
-
-    strategies.push({
-      name: constants.name,
-      url: `/auth/${constants.name}`,
-      callbackURL: `/auth/${constants.name}/callback`,
-      icon: "fa-check-square",
-      scope: (constants.scope || "").split(","),
-    });
-
-    callback(null, strategies);
-  } else {
-    callback(new Error("OAuth Configuration is invalid"));
-  }
-};
-
-OAuth.parseUserReturn = function (data, callback) {
-  // Alter this section to include whatever data is necessary
-  // NodeBB *requires* the following: id, displayName, emails.
-  // Everything else is optional.
-
-  // Find out what is available by uncommenting this line:
-  winston.verbose(data);
-
-  const profile = {};
-  profile.id = data.sub;
-  profile.displayName = data.fullname;
-  profile.emails = [{ value: data.email }];
-
-  // Do you want to automatically make somebody an admin? This line might help you do that...
-  // profile.isAdmin = data.isAdmin ? true : false;
-
-  // Delete or comment out the next TWO (2) lines when you are ready to proceed
-  process.stdout.write(
-    '===\nAt this point, you\'ll need to customise the above section to id, displayName, and emails into the "profile" object.\n===',
-  );
-  return callback(
-    new Error("Congrats! So far so good -- please see server log for details"),
-  );
-
-  // eslint-disable-next-line
-  callback(null, profile);
-};
-
-OAuth.login = async (payload) => {
-  let uid = await OAuth.getUidByOAuthid(payload.oAuthid);
-  if (uid !== null) {
-    // Existing User
-    return {
-      uid: uid,
-    };
-  }
-
-  // Check for user via email fallback
-  uid = await User.getUidByEmail(payload.email);
-  if (!uid) {
-    /**
-     * The email retrieved from the user profile might not be trusted.
-     * Only you would know — it's up to you to decide whether or not to:
-     *   - Send the welcome email which prompts for verification (default)
-     *   - Bypass the welcome email and automatically verify the email (commented out, below)
-     */
-    const { email } = payload;
-
-    // New user
-    uid = await User.create({
-      username: payload.handle,
-      // email, // if you uncomment the block below, comment this line out
-    });
-
-    // Automatically confirm user email
-    await User.setUserField(uid, "email", email);
-    await User.email.confirmByUid(uid);
-  }
-
-  // Save provider-specific information to the user
-  await User.setUserField(uid, `${constants.name}Id`, payload.oAuthid);
-  await db.setObjectField(`${constants.name}Id:uid`, payload.oAuthid, uid);
-
-  if (payload.isAdmin) {
-    await Groups.join("administrators", uid);
-  }
-
-  return {
-    uid: uid,
   };
-};
 
-OAuth.getUidByOAuthid = async (oAuthid) =>
-  db.getObjectField(`${constants.name}Id:uid`, oAuthid);
+  Feide.getStrategy = (strategies, callback) => {
+    winston.info("[feide-sso] Getting strategy...");
+    meta.settings.get('sso-feide', (err, settings) => {
+      Feide.settings = settings;
 
-OAuth.deleteUserData = function (data, callback) {
-  async.waterfall(
-    [
-      async.apply(User.getUserField, data.uid, `${constants.name}Id`),
-      function (oAuthIdToDelete, next) {
-        db.deleteObjectField(`${constants.name}Id:uid`, oAuthIdToDelete, next);
-      },
-    ],
-    (err) => {
       if (err) {
-        winston.error(
-          `[sso-oauth] Could not remove OAuthId data for uid ${data.uid}. Error: ${err}`,
-        );
-        return callback(err);
+        winston.error("[feide-sso] Got error when fetching login strategy", err);
+      }
+
+      if (!settings.id || !settings.secret) {
+        winston.error("[feide-sso] Missing client id or client secret for feide settings:", settings);
+      }
+
+      if (!err && settings.id && settings.secret) {
+        passport.use("feide", new OpenIDConnectStrategy({
+            issuer: "https://auth.dataporten.no",
+            authorizationURL: "https://auth.dataporten.no/oauth/authorization",
+            tokenURL: "https://auth.dataporten.no/oauth/token",
+            callbackURL: nconf.get('url') + '/auth/feide/callback',
+            userInfoURL: "https://auth.dataporten.no/openid/userinfo",
+            clientID: settings.id,
+            clientSecret: settings.secret,
+            scope: "email openid userinfo-photo groups-edu userinfo-language userid userinfo-name groups-org userid-feide",
+            passReqToCallback: true,
+            store: {
+              verify(req, handle, cb) {
+                winston.info("[feide-sso] Passport store verify called...");
+                if (!req.session) {
+                  return cb(new Error('OpenID Connect requires session support. Did you forget to use `express-session` middleware?'));
+                }
+
+                const state = req.session.ssoState;
+                if (!state) {
+                  winston.error("[feide-sso] No csrf state found in request...");
+                  return cb(null, false, { message: 'Unable to verify authorization request state.' });
+                }
+
+                if (state !== handle) {
+                  winston.error("[feide-sso] Invalid csrf state found in request...");
+                  return cb(null, false, { message: 'Invalid authorization request state.' });
+                }
+
+                const ctx = {
+                  maxAge: state.maxAge,
+                  nonce: state.nonce,
+                  issued: state.issued
+                };
+                if (typeof ctx.issued === 'string') {
+                  ctx.issued = new Date(ctx.issued);
+                }
+
+                return cb(null, ctx, state.state);
+              },
+              store(req, ctx, appState, meta, cb) {
+                if (!req.session) return cb(new Error('OpenID Connect requires session support. Did you forget to use `express-session` middleware?'));
+                const key = this._key;
+                const handle = utils.uid(24);
+                const state = { handle: handle };
+                if (ctx.maxAge) {
+                  state.maxAge = ctx.maxAge;
+                }
+                if (ctx.nonce) {
+                  state.nonce = ctx.nonce;
+                }
+                if (ctx.issued) {
+                  state.issued = ctx.issued;
+                }
+                if (appState) {
+                  state.state = appState;
+                }
+                if (!req.session[key]) {
+                  req.session[key] = {};
+                }
+                req.session[key].state = state;
+                cb(null, appState);
+              }
+            }
+          },
+          async (req, issuer, profile, context, idToken, accessToken, refreshToken, done) => {
+            winston.info("[feide-sso] Passport strategy callback called...");
+            const feideId = profile.id;
+            const alreadyLoggedIn = Object.prototype.hasOwnProperty.call(req, 'user') && Object.prototype.hasOwnProperty.call(req.user, 'uid') && req.user.uid > 0
+            if (alreadyLoggedIn) {
+              await User.setUserField(req.user.uid, 'feideid', feideId);
+              await db.setObjectField('feideid:uid', feideId, req.user.uid);
+              return done(null, req.user);
+            }
+
+            const userInfo = await fetchUserInfo(accessToken)
+            const user = await Feide.login(feideId, userInfo);
+            authenticationController.onSuccessfulLogin(req, user.uid);
+            done(null, user);
+          }))
+
+        strategies.push({
+          name: 'feide',
+          url: '/auth/feide',
+          callbackURL: '/auth/feide/callback',
+          icon: constants.admin.icon,
+          icons: {
+            normal: 'fa fa-fw fa-user',
+            square: 'fa fa-fw fa-user',
+          },
+          labels: {
+            login: '[[social:sign-in-with-feide]]',
+            register: '[[social:sign-up-with-feide]]',
+          },
+          color: '#25292f',
+          scope: 'user:email'
+        });
+      }
+
+      callback(null, strategies);
+    });
+  };
+
+  Feide.appendUserHashWhitelist = (data, callback) => {
+    data.whitelist.push('feideid');
+    setImmediate(callback, null, data);
+  };
+
+  Feide.getAssociation = (data, callback) => {
+    User.getUserField(data.uid, 'feideid', (err, feideid) => {
+      if (err) {
+        winston.error("[feide-sso] Error in `Feide.getAssociation`.", err);
+        return callback(err, data);
+      }
+
+      if (feideid) {
+        data.associations.push({
+          associated: true,
+          name: constants.name,
+          icon: constants.admin.icon,
+          deauthUrl: nconf.get('url') + '/deauth/feide',
+        });
+      } else {
+        data.associations.push({
+          associated: false,
+          url: nconf.get('url') + '/auth/feide',
+          name: constants.name,
+          icon: constants.admin.icon
+        });
       }
 
       callback(null, data);
-    },
-  );
-};
+    })
+  };
 
-// If this filter is not there, the deleteUserData function will fail when getting the oauthId for deletion.
-OAuth.whitelistFields = function (params, callback) {
-  params.whitelist.push(`${constants.name}Id`);
-  callback(null, params);
-};
+  const updateEmailForUser = async (uid, email) => {
+    winston.info(`[feide-sso] Setting and validating email for uid ${uid}...`);
+    await User.setUserField(uid, 'email', email);
+    await User.setUserField(uid, 'email:confirmed', 1);
+  };
+
+  const updateFeideIdForUser = async (uid, feideID) => {
+    await User.setUserField(uid, 'feideid', feideID);
+    await db.setObjectField('feideid:uid', feideID, uid);
+  };
+
+  const mergeUserData = async (uid, displayName) => {
+    const info = await User.getUserFields(uid, ['picture', 'firstName', 'lastName', 'fullname'])
+    if (!info.fullname && displayName) {
+      User.setUserField(uid, 'fullname', displayName);
+    }
+  }
+
+  const updateUserData = async (uid, displayName, feideID, email) => {
+    await updateFeideIdForUser(uid, feideID)
+    await mergeUserData(uid, displayName);
+    await updateEmailForUser(uid, email);
+    return uid;
+  };
+
+
+  Feide.login = async (feideID, userInfo) => {
+    const { email, displayName, username } = userInfo;
+    if (!email) {
+      throw new Error('[feide-sso] Email not sent to `Feide.login`.');
+    }
+
+    const existingUid = await Feide.getUidByFeideID(feideID);
+    if (existingUid) {
+      winston.info(`[feide-sso] User '${existingUid}' already exists in the system for feideID '${feideID}'.`);
+      return { uid: existingUid };
+    }
+
+    winston.info(`[feide-sso] Creating new user for feideID '${feideID}'...`);
+    const uidFromEmail = await User.getUidByEmail(email);
+    if(uidFromEmail) {
+      const resultUid = await updateUserData(uidFromEmail, displayName, feideID, email);
+      return { uid: resultUid };
+    }
+
+    if (Feide.settings.disableRegistration === 'on') {
+      winston.warn("[feide-sso] Registration is disabled, but user tried to login.");
+      throw new Error('[[error:sso-registration-disabled, Feide]]');
+    }
+
+    const sanitizedUsername = sanitizeUsername(username);
+    winston.info(`[feide-sso] No user with email username '${sanitizedUsername}' found. Creating new user...`);
+    const newUid = await User.create({ username: sanitizedUsername });
+    winston.info(`[feide-sso] New user created with uid: ${newUid}`);
+    const resultUid = await updateUserData(newUid, displayName, feideID, email);
+    return { uid: resultUid };
+  };
+
+  Feide.getUidByFeideID = async (feideID) => {
+    winston.info(`[feide-sso] Getting UID by for feideID: '${feideID}'...`);
+    return db.getObjectField('feideid:uid', feideID);
+  };
+
+  Feide.addMenuItem = (custom_header, callback) => {
+    winston.info("[feide-sso] Adding menu item...");
+    custom_header.authentication.push({
+      "route": constants.admin.route,
+      "icon": constants.admin.icon,
+      "name": constants.name
+    });
+
+    callback(null, custom_header);
+  };
+
+  Feide.init = (data, callback) => {
+    winston.info("[feide-sso] Initializing...");
+    const hostHelpers = require.main.require('./src/routes/helpers');
+
+    hostHelpers.setupAdminPageRoute(data.router, '/admin/plugins/sso-feide', (req, res) => {
+      res.render('admin/plugins/sso-feide', {
+        title: constants.name,
+        callbackURL: nconf.get('url') + '/auth/feide/callback'
+      });
+    });
+
+    hostHelpers.setupPageRoute(data.router, '/deauth/feide', [data.middleware.requireUser], (req, res) => {
+      res.render('plugins/sso-feide/deauth', {
+        service: "Feide",
+      });
+    });
+    data.router.post('/deauth/feide', [data.middleware.requireUser, data.middleware.applyCSRF], (req, res, next) => {
+      Feide.deleteUserData({
+        uid: req.user.uid,
+      }, (err) => {
+        if (err) {
+          return next(err);
+        }
+
+        res.redirect(nconf.get('relative_path') + '/me/edit');
+      });
+    });
+
+    callback();
+  };
+
+  Feide.deleteUserData = (data, callback) => {
+    const uid = data.uid;
+    winston.info(`[feide-sso] Deleting user data for uid: '${uid}'...`);
+
+    async.waterfall([
+      async.apply(User.getUserField, uid, 'feideid'),
+      (oAuthIdToDelete, next) => {
+        db.deleteObjectField('feideid:uid', oAuthIdToDelete, next);
+      },
+      async.apply(db.deleteObjectField, 'user:' + uid, 'feideid'),
+    ], (err) => {
+      if (err) {
+        winston.error('[feide-sso] Could not remove OAuthId data for uid ' + uid + '. Error: ' + err);
+        return callback(err);
+      }
+      callback(null, uid);
+    });
+  };
+
+  module.exports = Feide;
+}(module));

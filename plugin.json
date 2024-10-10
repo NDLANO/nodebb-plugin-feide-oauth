@@ -1,12 +1,19 @@
 {
-	"id": "nodebb-plugin-sso-oauth",
-	"name": "NodeBB OAuth SSO",
-	"description": "NodeBB Plugin that allows users to login/register via any configured OAuth provider.",
-	"url": "https://github.com/julianlam/nodebb-plugin-sso-oauth",
+	"id": "nodebb-plugin-feide-oauth",
+	"name": "Feide NodeBB OAuth SSO",
+	"description": "NodeBB Plugin that allows users to login/register via their feide account.",
+	"url": "https://github.com/NDLANO/nodebb-plugin-feide-oauth",
 	"library": "./library.js",
 	"hooks": [
+		{ "hook": "static:app.load", "method": "init" },
+		{ "hook": "filter:auth.init", "method": "getStrategy" },
+		{ "hook": "filter:auth.list", "method": "getAssociation" },
+		{ "hook": "filter:admin.header.build", "method": "addMenuItem" },
 		{ "hook": "static:user.delete", "method": "deleteUserData" },
-		{ "hook": "filter:user.whitelistFields", "method": "whitelistFields" },
-		{ "hook": "filter:auth.init", "method": "getStrategy" }
-	]
+		{ "hook": "filter:user.whitelistFields", "method": "appendUserHashWhitelist" }
+	],
+	"templates": "./templates",
+	"modules": {
+		"../admin/plugins/sso-feide.js": "static/lib/admin.js"
+	}
 }
