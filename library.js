@@ -254,10 +254,9 @@
     await User.setUserField(uid, "email:confirmed", 1);
   };
 
-  const updateFeideIdForUser = async (uid, feideID, location) => {
+  const updateFeideIdForUser = async (uid, feideID) => {
     await User.setUserField(uid, "feideid", feideID);
     await db.setObjectField("feideid:uid", feideID, uid);
-    await User.setUserField(uid, "location", location);
   };
 
   const mergeUserData = async (uid, displayName) => {
@@ -272,8 +271,13 @@
     }
   };
 
+  const updateLocationForUser = async (uid, location) => {
+    await User.setUserField(uid, "location", location);
+  };
+
   const updateUserData = async (uid, displayName, feideID, email, location) => {
-    await updateFeideIdForUser(uid, feideID, location);
+    await updateFeideIdForUser(uid, feideID);
+    await updateLocationForUser(uid, location);
     await mergeUserData(uid, displayName);
     await updateEmailForUser(uid, email);
     return uid;
@@ -287,50 +291,43 @@
     return userInfo.organization;
   };
 
-  Feide.login = async (feideID, userInfo) => {
-    const { email, displayName, username } = userInfo;
-    const location = getLocation(userInfo);
-
-    if (!email) {
-      throw new Error("[feide-sso] Email not sent to `Feide.login`.");
-    }
-
+  const getOrCreateUser = async (feideID, userInfo) => {
+    const { email, username } = userInfo;
     const existingUid = await Feide.getUidByFeideID(feideID);
-    if (existingUid) {
-      winston.info(
-        `[feide-sso] User '${existingUid}' already exists in the system for feideID '${feideID}'.`,
-      );
-      return { uid: existingUid };
-    }
+    if (existingUid) return existingUid;
+
+    const uidFromEmail = await User.getUidByEmail(email);
+    if (uidFromEmail) return uidFromEmail;
 
     winston.info(`[feide-sso] Creating new user for feideID '${feideID}'...`);
-    const uidFromEmail = await User.getUidByEmail(email);
-    if (uidFromEmail) {
-      const resultUid = await updateUserData(
-        uidFromEmail,
-        displayName,
-        feideID,
-        email,
-        location,
-      );
-      return { uid: resultUid };
-    }
-
     if (Feide.settings.disableRegistration === "on") {
       winston.warn(
-        "[feide-sso] Registration is disabled, but user tried to login.",
+        `[feide-sso] Registration is disabled, but user '${feideID}' tried to login.`,
       );
-      throw new Error("[[error:sso-registration-disabled, Feide]]");
+      return Promise.reject(
+        new Error("[[error:sso-registration-disabled, Feide]]"),
+      );
     }
 
     const sanitizedUsername = sanitizeUsername(username);
-    winston.info(
-      `[feide-sso] No user with email username '${sanitizedUsername}' found. Creating new user...`,
-    );
     const newUid = await User.create({ username: sanitizedUsername });
     winston.info(`[feide-sso] New user created with uid: ${newUid}`);
+    return newUid;
+  };
+
+  Feide.login = async (feideID, userInfo) => {
+    if (!userInfo.email) {
+      return Promise.reject(
+        new Error("[feide-sso] Email not sent to `Feide.login`."),
+      );
+    }
+
+    const { email, displayName } = userInfo;
+    const location = getLocation(userInfo);
+    const uid = await getOrCreateUser(feideID, userInfo);
+
     const resultUid = await updateUserData(
-      newUid,
+      uid,
       displayName,
       feideID,
       email,
