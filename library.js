@@ -206,8 +206,8 @@
             square: "fa fa-fw fa-user",
           },
           labels: {
-            login: "[[social:sign-in-with-feide]]",
-            register: "[[social:sign-up-with-feide]]",
+            login: "Logg inn med Feide",
+            register: "Registrer deg med Feide",
           },
           color: "#25292f",
           scope: "user:email",
