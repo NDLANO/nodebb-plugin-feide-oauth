@@ -254,9 +254,10 @@
     await User.setUserField(uid, "email:confirmed", 1);
   };
 
-  const updateFeideIdForUser = async (uid, feideID) => {
+  const updateFeideIdForUser = async (uid, feideID, location) => {
     await User.setUserField(uid, "feideid", feideID);
     await db.setObjectField("feideid:uid", feideID, uid);
+    await User.setUserField(uid, "location", location);
   };
 
   const mergeUserData = async (uid, displayName) => {
@@ -271,15 +272,25 @@
     }
   };
 
-  const updateUserData = async (uid, displayName, feideID, email) => {
-    await updateFeideIdForUser(uid, feideID);
+  const updateUserData = async (uid, displayName, feideID, email, location) => {
+    await updateFeideIdForUser(uid, feideID, location);
     await mergeUserData(uid, displayName);
     await updateEmailForUser(uid, email);
     return uid;
   };
 
+  const getLocation = (userInfo) => {
+    const primarySchoolGroup = userInfo.groups.find(
+      (group) => group.isPrimarySchool,
+    );
+    if (primarySchoolGroup) return primarySchoolGroup.displayName;
+    return userInfo.organization;
+  };
+
   Feide.login = async (feideID, userInfo) => {
     const { email, displayName, username } = userInfo;
+    const location = getLocation(userInfo);
+
     if (!email) {
       throw new Error("[feide-sso] Email not sent to `Feide.login`.");
     }
@@ -300,6 +311,7 @@
         displayName,
         feideID,
         email,
+        location,
       );
       return { uid: resultUid };
     }
@@ -317,7 +329,13 @@
     );
     const newUid = await User.create({ username: sanitizedUsername });
     winston.info(`[feide-sso] New user created with uid: ${newUid}`);
-    const resultUid = await updateUserData(newUid, displayName, feideID, email);
+    const resultUid = await updateUserData(
+      newUid,
+      displayName,
+      feideID,
+      email,
+      location,
+    );
     return { uid: resultUid };
   };
 
