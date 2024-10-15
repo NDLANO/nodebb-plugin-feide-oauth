@@ -1,6 +1,4 @@
 (function (module) {
-  "use strict";
-
   const User = require.main.require("./src/user");
   const db = require.main.require("./src/database");
   const meta = require.main.require("./src/meta");
