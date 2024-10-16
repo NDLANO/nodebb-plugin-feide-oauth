@@ -25,11 +25,12 @@
   "readmeFilename": "README.md",
   "dependencies": {
     "async": "^3.2.0",
-    "passport-oauth": "~1.0.0"
+    "passport-oauth": "~1.0.0",
+    "@node-saml/passport-saml": "^5.0.0",
+    "passport-openidconnect": "^0.1.2"
   },
   "nbbpm": {
-    "compatibility": "^1.0.1",
-    "index": false
+    "compatibility": "^3.2.0"
   },
   "scripts": {
     "lint": "yarn format-check && yarn lint-es",
@@ -50,7 +51,8 @@
     "husky": "9.1.6",
     "lint-staged": "15.2.10",
     "prettier": "^3.1.0",
-    "typescript": "^5.3.2"
+    "typescript": "^5.3.2",
+    "@types/passport-openidconnect": "^0.1.3"
   },
   "husky": {
     "hooks": {
