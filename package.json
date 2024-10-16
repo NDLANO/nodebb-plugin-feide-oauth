@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-feide-oauth",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "NodeBB Feide OAuth SSO",
   "main": "library.js",
   "repository": {
@@ -24,9 +24,9 @@
   "readme": "",
   "readmeFilename": "README.md",
   "dependencies": {
+    "@node-saml/passport-saml": "^5.0.0",
     "async": "^3.2.0",
     "passport-oauth": "~1.0.0",
-    "@node-saml/passport-saml": "^5.0.0",
     "passport-openidconnect": "^0.1.2"
   },
   "nbbpm": {
@@ -45,14 +45,14 @@
     "@babel/preset-react": "^7.22.15",
     "@babel/preset-typescript": "^7.23.2",
     "@commitlint/config-angular": "15.0.0",
+    "@types/passport-openidconnect": "^0.1.3",
     "eslint": "^9.0.0",
     "eslint-config-ndla": "^3.3.0",
     "eslint-plugin-import": "^2.27.5",
     "husky": "9.1.6",
     "lint-staged": "15.2.10",
     "prettier": "^3.1.0",
-    "typescript": "^5.3.2",
-    "@types/passport-openidconnect": "^0.1.3"
+    "typescript": "^5.3.2"
   },
   "husky": {
     "hooks": {
