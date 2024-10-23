@@ -98,6 +98,7 @@ Feide.getStrategy = (strategies, callback) => {
             scope:
               "email openid userinfo-photo groups-edu userinfo-language userid userinfo-name groups-org userid-feide",
             passReqToCallback: true,
+            loginHint: "feide|all",
             store: {
               verify(req, handle, cb) {
                 winston.info("[feide-sso] Passport store verify called...");
