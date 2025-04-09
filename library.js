@@ -189,7 +189,7 @@ Feide.getStrategy = (strategies, callback) => {
                 req.user.uid > 0;
               if (alreadyLoggedIn) {
                 await User.setUserField(req.user.uid, "feideid", feideId);
-                await db.setObjectField("feideid:uid", feideId, req.user.uid);
+                await db.sortedSetAdd("feideId:uid", req.user.uid, feideId); // use same field as session sharing
                 return done(null, req.user);
               }
 
@@ -264,7 +264,7 @@ const updateEmailForUser = async (uid, email) => {
 
 const updateFeideIdForUser = async (uid, feideID) => {
   await User.setUserField(uid, "feideid", feideID);
-  await db.setObjectField("feideid:uid", feideID, uid);
+  await db.sortedSetAdd("feideId:uid", uid, feideID); // use same field as session sharing
 };
 
 const mergeUserData = async (uid, displayName) => {
@@ -347,7 +347,7 @@ const login = async (feideID, userInfo) => {
 
 const getUidByFeideID = async (feideID) => {
   winston.info(`[feide-sso] Getting UID by for feideID: '${feideID}'...`);
-  return db.getObjectField("feideid:uid", feideID);
+  return await db.sortedSetScore("feideId:uid", feideID);
 };
 
 Feide.addMenuItem = (custom_header, callback) => {
@@ -416,6 +416,7 @@ Feide.deleteUserData = (data, callback) => {
     [
       async.apply(User.getUserField, uid, "feideid"),
       (oAuthIdToDelete, next) => {
+        db.sortedSetRemove("feideId:uid", oAuthIdToDelete);
         db.deleteObjectField("feideid:uid", oAuthIdToDelete, next);
       },
       async.apply(db.deleteObjectField, "user:" + uid, "feideid"),
