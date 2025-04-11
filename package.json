@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-feide-oauth",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "NodeBB Feide OAuth SSO",
   "main": "library.js",
   "repository": {
