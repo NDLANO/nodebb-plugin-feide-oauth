@@ -30,7 +30,7 @@
     "passport-openidconnect": "^0.1.2"
   },
   "nbbpm": {
-    "compatibility": "^3.2.0"
+    "compatibility": "^4.0.0"
   },
   "scripts": {
     "lint": "yarn format-check && yarn lint-es",
