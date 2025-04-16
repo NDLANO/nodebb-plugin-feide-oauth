@@ -216,7 +216,8 @@ Feide.getStrategy = (strategies, callback) => {
           register: "Registrer deg med Feide",
         },
         color: "#25292f",
-        scope: "user:email",
+        scope:
+          "email openid userinfo-photo groups-edu userinfo-language userid userinfo-name groups-org userid-feide",
       });
     }
 
