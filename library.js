@@ -4,12 +4,12 @@ const meta = require.main.require("./src/meta");
 const nconf = require.main.require("nconf");
 const async = require.main.require("async");
 const passport = require.main.require("passport");
-const OpenIDConnectStrategy = require("passport-openidconnect");
-const utils = require("passport-openidconnect/lib/utils");
 const winston = require.main.require("winston");
+const hostHelpers = require.main.require("./src/routes/helpers");
 const authenticationController = require.main.require(
   "./src/controllers/authentication",
 );
+const { generators, Issuer, Strategy } = require("openid-client");
 
 const gatewayHost = process.env.API_GATEWAY_HOST
   ? `http://${process.env.API_GATEWAY_HOST}`
@@ -69,7 +69,7 @@ const catchUnexpectedErrors = async (func, callback) => {
 
 Feide.getStrategy = (strategies, callback) => {
   winston.info("[feide-sso] Getting strategy...");
-  meta.settings.get("sso-feide", (err, settings) => {
+  meta.settings.get("sso-feide", async (err, settings) => {
     Feide.settings = settings;
 
     if (err) {
@@ -83,106 +83,61 @@ Feide.getStrategy = (strategies, callback) => {
       );
     }
 
+    const code_verifier = generators.codeVerifier();
+    const code_challenge = generators.codeChallenge(code_verifier);
+
     if (!err && settings.id && settings.secret) {
+      const issuer = await Issuer.discover(
+        "https://auth.dataporten.no/.well-known/openid-configuration",
+      );
+      const { Client } = issuer;
+      const client = new Client({
+        client_id: settings.id,
+        client_secret: settings.secret,
+        redirect_uris: [nconf.get("url") + "/auth/feide/callback"],
+      });
       passport.use(
         "feide",
-        new OpenIDConnectStrategy(
+        new Strategy(
           {
-            issuer: "https://auth.dataporten.no",
-            authorizationURL: "https://auth.dataporten.no/oauth/authorization",
-            tokenURL: "https://auth.dataporten.no/oauth/token",
-            callbackURL: nconf.get("url") + "/auth/feide/callback",
-            userInfoURL: "https://auth.dataporten.no/openid/userinfo",
-            clientID: settings.id,
-            clientSecret: settings.secret,
-            scope:
-              "email openid userinfo-photo groups-edu userinfo-language userid userinfo-name groups-org userid-feide",
-            passReqToCallback: true,
-            loginHint: "feide|all",
-            store: {
-              verify(req, handle, cb) {
-                winston.info("[feide-sso] Passport store verify called...");
-                if (!req.session) {
-                  return cb(
-                    new Error(
-                      "OpenID Connect requires session support. Did you forget to use `express-session` middleware?",
-                    ),
-                  );
-                }
-
-                const state = req.session.ssoState;
-                if (!state) {
-                  winston.error(
-                    "[feide-sso] No csrf state found in request...",
-                  );
-                  return cb(null, false, {
-                    message: "Unable to verify authorization request state.",
-                  });
-                }
-
-                if (state !== handle) {
-                  winston.error(
-                    "[feide-sso] Invalid csrf state found in request...",
-                  );
-                  return cb(null, false, {
-                    message: "Invalid authorization request state.",
-                  });
-                }
-
-                const ctx = {
-                  maxAge: state.maxAge,
-                  nonce: state.nonce,
-                  issued: state.issued,
-                };
-                if (typeof ctx.issued === "string") {
-                  ctx.issued = new Date(ctx.issued);
-                }
-
-                return cb(null, ctx, state.state);
-              },
-              store(req, ctx, appState, meta, cb) {
-                if (!req.session)
-                  return cb(
-                    new Error(
-                      "OpenID Connect requires session support. Did you forget to use `express-session` middleware?",
-                    ),
-                  );
-                const key = this._key;
-                const handle = utils.uid(24);
-                const state = { handle: handle };
-                if (ctx.maxAge) {
-                  state.maxAge = ctx.maxAge;
-                }
-                if (ctx.nonce) {
-                  state.nonce = ctx.nonce;
-                }
-                if (ctx.issued) {
-                  state.issued = ctx.issued;
-                }
-                if (appState) {
-                  state.state = appState;
-                }
-                if (!req.session[key]) {
-                  req.session[key] = {};
-                }
-                req.session[key].state = state;
-                cb(null, appState);
-              },
+            client,
+            params: {
+              client_id: settings.id,
+              code_challenge,
+              response_type: "code",
+              redirect_url: nconf.get("url") + "/auth/feide/callback",
+              login_hint: "feide|all",
             },
+            usePKCE: "S256",
+            passReqToCallback: true,
           },
-          async (
-            req,
-            issuer,
-            profile,
-            context,
-            idToken,
-            accessToken,
-            refreshToken,
-            done,
-          ) => {
+          function (req, tokenSet, cb) {
+            winston.info("[feide-sso] Passport store verify called...");
+            if (!req.session) {
+              return cb(
+                new Error(
+                  "OpenID Connect requires session support. Did you forget to use `express-session` middleware?",
+                ),
+              );
+            }
+            const state = req.session.ssoState;
+            if (!state) {
+              winston.error("[feide-sso] No csrf state found in request...");
+              return cb(null, false, {
+                message: "Unable to verify authorization request state.",
+              });
+            }
+            if (state !== req.session.csrfToken) {
+              winston.error(
+                "[feide-sso] Invalid csrf state found in request...",
+              );
+              return cb(null, false, {
+                message: "Invalid authorization request state.",
+              });
+            }
             return catchUnexpectedErrors(async () => {
               winston.info("[feide-sso] Passport strategy callback called...");
-              const feideId = profile.id;
+              const feideId = tokenSet.claims()?.sub;
               const alreadyLoggedIn =
                 Object.prototype.hasOwnProperty.call(req, "user") &&
                 Object.prototype.hasOwnProperty.call(req.user, "uid") &&
@@ -190,14 +145,14 @@ Feide.getStrategy = (strategies, callback) => {
               if (alreadyLoggedIn) {
                 await User.setUserField(req.user.uid, "feideid", feideId);
                 await db.sortedSetAdd("feideId:uid", req.user.uid, feideId); // use same field as session sharing
-                return done(null, req.user);
+                return cb(null, req.user);
               }
 
-              const userInfo = await fetchUserInfo(accessToken);
+              const userInfo = await fetchUserInfo(tokenSet.access_token);
               const user = await login(feideId, userInfo);
               authenticationController.onSuccessfulLogin(req, user.uid);
-              return done(null, user);
-            }, done);
+              return cb(null, user);
+            }, cb);
           },
         ),
       );
@@ -364,7 +319,6 @@ Feide.addMenuItem = (custom_header, callback) => {
 
 Feide.init = (data, callback) => {
   winston.info("[feide-sso] Initializing...");
-  const hostHelpers = require.main.require("./src/routes/helpers");
 
   hostHelpers.setupAdminPageRoute(
     data.router,
