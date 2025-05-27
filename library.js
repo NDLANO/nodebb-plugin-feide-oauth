@@ -41,16 +41,25 @@ const fetchUserInfo = async (token) => {
         FeideAuthorization: `Bearer ${token}`,
       },
     });
-    if (response.ok) {
-      return await response.json();
-    }
     const responseBody = await response.json();
-    winston.error(
-      `[feide-sso] Got error when fetching user info. Got code ${response.code} with body: ${JSON.stringify(responseBody)}`,
-    );
-    return null;
+    if (response.ok) {
+      if (responseBody["arenaAccepted"] === false) {
+        winston.error("Arena not accepted!!");
+        throw Error("Brukeren har ikke godtatt bruk av arenaen i Min NDLA");
+      }
+      winston.info("Returning responsebody");
+      return responseBody;
+    } else {
+      winston.error(
+        `[feide-sso] Got error when fetching user info. Got code ${response.code} with body: ${JSON.stringify(responseBody)}`,
+      );
+      return null;
+    }
   } catch (error) {
-    throw Error("[feide-sso] An error occurred while fetching userInfo", error);
+    throw Error(
+      `[feide-sso] An error occurred while fetching userInfo: ${error.message}`,
+      error,
+    );
   }
 };
 
