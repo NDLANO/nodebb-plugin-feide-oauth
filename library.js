@@ -44,10 +44,8 @@ const fetchUserInfo = async (token) => {
     const responseBody = await response.json();
     if (response.ok) {
       if (responseBody["arenaAccepted"] === false) {
-        winston.error("Arena not accepted!!");
         throw Error("Brukeren har ikke godtatt bruk av arenaen i Min NDLA");
       }
-      winston.info("Returning responsebody");
       return responseBody;
     } else {
       winston.error(
