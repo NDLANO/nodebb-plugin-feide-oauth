@@ -43,11 +43,6 @@ const fetchUserInfo = async (token) => {
     });
     const responseBody = await response.json();
     if (response.ok) {
-      if (responseBody["arenaAccepted"] === false) {
-        throw Error(
-          "Logg inn på ndla.no/minndla for å godta vilkår for arenaen.",
-        );
-      }
       return responseBody;
     } else {
       winston.error(
