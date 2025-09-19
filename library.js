@@ -43,6 +43,9 @@ const fetchUserInfo = async (token) => {
     });
     const responseBody = await response.json();
     if (response.ok) {
+      if (!constants.validRoles.includes(responseBody["role"])) {
+        throw Error("[Feide] User role is not valid.");
+      }
       return responseBody;
     } else {
       winston.error(
