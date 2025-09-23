@@ -43,10 +43,8 @@ const fetchUserInfo = async (token) => {
     });
     const responseBody = await response.json();
     if (response.ok) {
-      if (responseBody["arenaAccepted"] === false) {
-        throw Error(
-          "Logg inn på ndla.no/minndla for å godta vilkår for arenaen.",
-        );
+      if (!constants.validRoles.includes(responseBody["role"])) {
+        throw Error("[Feide] User role is not valid.");
       }
       return responseBody;
     } else {
