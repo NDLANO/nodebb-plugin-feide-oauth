@@ -34,12 +34,14 @@ const sanitizeUsername = (username) => {
 
 const Feide = {};
 
-const fetchUserInfo = async (token) => {
+const fetchUserInfo = async (idToken, accessToken) => {
   try {
     const response = await fetch(constants.myndlaApiUrl, {
+      method: "PUT",
       headers: {
-        FeideAuthorization: `Bearer ${token}`,
+        FeideAuthorization: `Bearer ${idToken}`,
       },
+      body: JSON.stringify({ accessToken }),
     });
     const responseBody = await response.json();
     if (response.ok) {
@@ -200,7 +202,7 @@ Feide.getStrategy = (strategies, callback) => {
                 return done(null, req.user);
               }
 
-              const userInfo = await fetchUserInfo(accessToken);
+              const userInfo = await fetchUserInfo(idToken, accessToken);
               const user = await login(feideId, userInfo);
               authenticationController.onSuccessfulLogin(req, user.uid);
               return done(null, user);
