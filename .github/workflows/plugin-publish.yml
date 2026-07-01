@@ -21,8 +21,9 @@ jobs:
         with:
           token: ${{ secrets.CI_GITHUB_TOKEN }}
       - uses: actions/setup-node@v6
-      - name: Ensure latest npm for Trusted Publishing
-        run: npm install -g npm@latest
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
       - name: Setup git
         run: |
           git config user.email "$KNOWIT_EMAIL"
