@@ -13,22 +13,21 @@ jobs:
   publish_feide_plugin:
     name: Publish feide plugin
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.CI_GITHUB_TOKEN }}
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "20.9"
+      - uses: actions/setup-node@v6
       - name: Setup git
         run: |
           git config user.email "$KNOWIT_EMAIL"
           git config user.name "github-actions"
       - name: Publish feide plugin package
         run: |
-          yarn
-          yarn publish --non-interactive --access public --patch
+          npm version patch -m "v%s"
+          npm publish --access public
           git push
           git push --tags
-        env:
-          NPM_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
