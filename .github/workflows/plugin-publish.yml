@@ -21,6 +21,8 @@ jobs:
         with:
           token: ${{ secrets.CI_GITHUB_TOKEN }}
       - uses: actions/setup-node@v6
+      - name: Ensure latest npm for Trusted Publishing
+        run: npm install -g npm@latest
       - name: Setup git
         run: |
           git config user.email "$KNOWIT_EMAIL"
@@ -28,6 +30,6 @@ jobs:
       - name: Publish feide plugin package
         run: |
           npm version patch -m "v%s"
-          npm publish --access public
+          npm publish --provenance --access public
           git push
           git push --tags
