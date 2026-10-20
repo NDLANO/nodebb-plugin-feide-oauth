@@ -1,6 +1,8 @@
 const User = require.main.require("./src/user");
 const db = require.main.require("./src/database");
 const meta = require.main.require("./src/meta");
+const helpers = require.main.require("./src/controllers/helpers");
+const controller404 = require.main.require("./src/controllers/404");
 const nconf = require.main.require("nconf");
 const async = require.main.require("async");
 const passport = require.main.require("passport");
@@ -444,6 +446,15 @@ Feide.deleteUserData = (data, callback) => {
       callback(null, uid);
     },
   );
+};
+
+// Gets back automatic redirect to login for restricted topics.
+Feide.override404 = async ({ req, res }) => {
+  const isTopicPath = /^(\/api)?\/topic\//.test(req.path);
+  if (isTopicPath && !req.loggedIn) {
+    return helpers.notAllowed(req, res);
+  }
+  return controller404.send404(req, res);
 };
 
 module.exports = Feide;
