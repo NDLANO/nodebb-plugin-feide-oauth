@@ -3,6 +3,7 @@ const db = require.main.require("./src/database");
 const meta = require.main.require("./src/meta");
 const helpers = require.main.require("./src/controllers/helpers");
 const controller404 = require.main.require("./src/controllers/404");
+const activitypub = require.main.require("./src/activitypub");
 const nconf = require.main.require("nconf");
 const async = require.main.require("async");
 const passport = require.main.require("passport");
@@ -448,13 +449,55 @@ Feide.deleteUserData = (data, callback) => {
   );
 };
 
-// Gets back automatic redirect to login for restricted topics.
+const relativePath = nconf.get("relative_path");
+const isTopicPath = new RegExp(`^${relativePath}(\\/api)?\\/topic\\/`);
+const isClientScript = new RegExp(
+  `^${relativePath}\\/assets\\/src\\/.+\\.js(\\?v=\\w+)?$`,
+);
+
+// NodeBB v4 returns 404 for topics the user cannot read. Redirect guests to
+// login instead. Registering this hook disables core's 404 handling, so the
+// remaining branches mirror src/controllers/404.js handle404.
 Feide.override404 = async ({ req, res }) => {
-  const isTopicPath = /^(\/api)?\/topic\//.test(req.path);
-  if (isTopicPath && !req.loggedIn) {
-    return helpers.notAllowed(req, res);
+  try {
+    if (isTopicPath.test(req.path) && !req.loggedIn) {
+      return await helpers.notAllowed(req, res);
+    }
+
+    if (isClientScript.test(req.url)) {
+      return res.type("text/javascript").status(404).send("Not Found");
+    }
+    if (
+      activitypub.helpers?.assertAccept?.(req.headers.accept) ||
+      (req.headers["Content-Type"] &&
+        activitypub._constants?.acceptableTypes?.includes(
+          req.headers["Content-Type"],
+        ))
+    ) {
+      return res.sendStatus(404);
+    }
+    if (
+      !res.locals.isAPI &&
+      (req.path.startsWith(`${relativePath}/assets/uploads`) ||
+        (req.get("accept") && !req.get("accept").includes("text/html")) ||
+        req.path === "/favicon.ico")
+    ) {
+      meta.errors.log404(req.path || "");
+      return res.sendStatus(404);
+    }
+    if (req.accepts("html")) {
+      meta.errors.log404(req.path.replace(/^\/api/, "") || "");
+      return await controller404.send404(req, res, (err) => {
+        throw err;
+      });
+    }
+    return res.status(404).type("txt").send("Not found");
+  } catch (err) {
+    winston.error(`[feide-oauth] override404 failed: ${err.stack}`);
+    if (!res.headersSent) {
+      res.sendStatus(404);
+    }
   }
-  return controller404.send404(req, res);
 };
 
 module.exports = Feide;
